@@ -1,13 +1,13 @@
+use super::{client::StarkNetClient, errors::StarknetError};
+use anyhow::{anyhow, Result};
 use starknet::{
     accounts::{single_owner::TransactionError, Account, Call},
     core::{
-        types::{BlockId, FieldElement, InvokeFunctionTransactionRequest},
+        types::{AddTransactionResult, BlockId, FieldElement, InvokeFunctionTransactionRequest},
         utils::get_selector_from_name,
     },
     providers::Provider,
 };
-
-use super::{client::StarkNetClient, errors::StarknetError};
 
 #[cfg(test)]
 use mockall::automock;
@@ -25,7 +25,7 @@ pub trait BadgeRegistryClient: Send + Sync {
         &self,
         user_account_address: FieldElement,
         github_user_id: u64,
-    ) -> Result<(), StarknetError>;
+    ) -> Result<AddTransactionResult>;
 }
 
 /// Stark ECDSA signature
@@ -77,8 +77,9 @@ impl BadgeRegistryClient for StarkNetClient {
         &self,
         user_account_address: FieldElement,
         github_user_id: u64,
-    ) -> Result<(), StarknetError> {
-        self.account
+    ) -> Result<AddTransactionResult> {
+        match self
+            .account
             .execute(&[Call {
                 to: self.badge_registry_address,
                 selector: get_selector_from_name("register_github_handle").unwrap(),
@@ -86,9 +87,13 @@ impl BadgeRegistryClient for StarkNetClient {
             }])
             .send()
             .await
-            .map_err(StarknetError::TransactionError)?;
-
-        Ok(())
+        {
+            Ok(transaction_result) => {
+                self.wait_for_transaction_acceptance(transaction_result)
+                    .await
+            }
+            Err(error) => Err(anyhow!(error.to_string())),
+        }
     }
 }
 
@@ -98,6 +103,7 @@ mod tests {
     use crate::contracts::client::StarkNetChain;
     use crate::contracts::{self, client::StarkNetClient};
 
+    use dotenv::dotenv;
     use rocket::tokio;
     use starknet::core::types::FieldElement;
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -115,6 +121,7 @@ mod tests {
         "0x000049b21dd8714eaf5a1b480d8ede84d2230d1763cfe06762d8a117490000";
 
     fn new_test_client() -> StarkNetClient {
+        dotenv().ok();
         let admin_account = std::env::var("STARKNET_ACCOUNT").unwrap();
         let admin_private_key = std::env::var("STARKNET_PRIVATE_KEY").unwrap();
 

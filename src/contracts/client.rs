@@ -1,12 +1,13 @@
-use std::str::FromStr;
+use std::{str::FromStr, thread, time::Duration};
 
+use anyhow::{anyhow, Result};
 use starknet::{
     accounts::SingleOwnerAccount,
     core::{
         chain_id::{MAINNET, TESTNET},
-        types::FieldElement,
+        types::{AddTransactionResult, FieldElement, TransactionStatus},
     },
-    providers::SequencerGatewayProvider,
+    providers::{Provider, SequencerGatewayProvider},
     signers::{LocalWallet, SigningKey},
 };
 
@@ -47,6 +48,47 @@ impl StarkNetClient {
             provider,
             account: SingleOwnerAccount::new(account_provider, signer, account_address, chain_id),
             badge_registry_address,
+        }
+    }
+
+    pub async fn wait_for_transaction_acceptance(
+        &self,
+        transaction_result: AddTransactionResult,
+    ) -> Result<AddTransactionResult> {
+        info!(
+            "Waiting for transaction 0x{:x} to be accepted",
+            transaction_result.transaction_hash
+        );
+
+        loop {
+            let receipt = match self
+                .provider
+                .get_transaction_status(transaction_result.transaction_hash)
+                .await
+                .map_err(anyhow::Error::msg)
+            {
+                Ok(receipt) => receipt,
+                Err(e) => {
+                    warn!("{}", e);
+                    thread::sleep(Duration::from_secs(3));
+                    continue;
+                }
+            };
+
+            info!("Transaction is {:?}", receipt.status);
+
+            break match receipt.status {
+                TransactionStatus::NotReceived
+                | TransactionStatus::Received
+                | TransactionStatus::Pending => {
+                    thread::sleep(Duration::from_secs(3));
+                    continue;
+                }
+                TransactionStatus::AcceptedOnL2 | TransactionStatus::AcceptedOnL1 => {
+                    Ok(transaction_result)
+                }
+                TransactionStatus::Rejected => Err(anyhow!("Transaction rejected")),
+            };
         }
     }
 }
