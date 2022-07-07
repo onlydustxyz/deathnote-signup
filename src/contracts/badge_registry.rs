@@ -120,8 +120,8 @@ impl StarkNetClient {
         }
     }
 
-    async fn plip(&self) -> Result<AddTransactionResult> {
-        let nonce = self.get_2d_nonce(FieldElement::from(666u32)).await?;
+    async fn plip(&self, nonce_key: u64) -> Result<AddTransactionResult> {
+        let nonce = self.get_2d_nonce(FieldElement::from(nonce_key)).await?;
         println!("{}", nonce);
 
         match self
@@ -129,16 +129,20 @@ impl StarkNetClient {
             .execute(&[Call {
                 to: felt!("0x03108821b2feb335df4d721adc757d0c3770fbc61c58b71208042f935c51b233"),
                 selector: get_selector_from_name("try_me").unwrap(),
-                calldata: vec![FieldElement::from(666u32), FieldElement::from(2u32)],
+                calldata: vec![FieldElement::from(20u32)],
             }])
             .nonce(nonce)
             .send()
             .await
         {
             Ok(transaction_result) => {
+                println!("{}", transaction_result.transaction_hash);
+                Ok(transaction_result)
+            }
+            /*Ok(transaction_result) => {
                 self.wait_for_transaction_acceptance(transaction_result)
                     .await
-            }
+            }*/
             Err(error) => Err(anyhow!(error.to_string())),
         }
     }
@@ -184,9 +188,26 @@ mod tests {
     async fn check_account() {
         let client = new_test_client();
         println!("plip");
-        let result = client.plip().await;
-
-        assert!(result.is_ok(), "{}", result.err().unwrap());
+        let result1 = client.plip(666u64).await;
+        assert!(result1.is_ok(), "{}", result1.err().unwrap());
+        let result2 = client.plip(10u64).await;
+        assert!(result2.is_ok(), "{}", result2.err().unwrap());
+        let result3 = client.plip(42000u64).await;
+        assert!(result3.is_ok(), "{}", result3.err().unwrap());
+        let result4 = client.plip(42000u64).await;
+        assert!(result4.is_ok(), "{}", result4.err().unwrap());
+        client
+            .wait_for_transaction_acceptance(result1.unwrap())
+            .await;
+        client
+            .wait_for_transaction_acceptance(result2.unwrap())
+            .await;
+        client
+            .wait_for_transaction_acceptance(result3.unwrap())
+            .await;
+        client
+            .wait_for_transaction_acceptance(result4.unwrap())
+            .await;
     }
 
     #[tokio::test]
