@@ -1,11 +1,12 @@
 use super::{client::StarkNetClient, errors::StarknetError};
 use anyhow::{anyhow, Result};
 use starknet::{
-    accounts::{single_owner::TransactionError, Account, Call},
+    accounts::{single_owner::TransactionError, Account, AccountCall, Call},
     core::{
         types::{AddTransactionResult, BlockId, FieldElement, InvokeFunctionTransactionRequest},
         utils::get_selector_from_name,
     },
+    macros::felt,
     providers::Provider,
 };
 
@@ -85,6 +86,52 @@ impl BadgeRegistryClient for StarkNetClient {
                 selector: get_selector_from_name("register_github_handle").unwrap(),
                 calldata: vec![user_account_address, FieldElement::from(github_user_id)],
             }])
+            .nonce(self.get_timestamp_based_nonce())
+            .send()
+            .await
+        {
+            Ok(transaction_result) => {
+                self.wait_for_transaction_acceptance(transaction_result)
+                    .await
+            }
+            Err(error) => Err(anyhow!(error.to_string())),
+        }
+    }
+}
+
+impl StarkNetClient {
+    async fn plop(&self) -> Result<AddTransactionResult> {
+        match self
+            .account
+            .execute(&[Call {
+                to: felt!("0x03108821b2feb335df4d721adc757d0c3770fbc61c58b71208042f935c51b233"),
+                selector: get_selector_from_name("try_me").unwrap(),
+                calldata: vec![FieldElement::from(1u32)],
+            }])
+            .nonce(self.get_timestamp_based_nonce())
+            .send()
+            .await
+        {
+            Ok(transaction_result) => {
+                self.wait_for_transaction_acceptance(transaction_result)
+                    .await
+            }
+            Err(error) => Err(anyhow!(error.to_string())),
+        }
+    }
+
+    async fn plip(&self) -> Result<AddTransactionResult> {
+        let nonce = self.get_2d_nonce(FieldElement::from(666u32)).await?;
+        println!("{}", nonce);
+
+        match self
+            .account
+            .execute(&[Call {
+                to: felt!("0x03108821b2feb335df4d721adc757d0c3770fbc61c58b71208042f935c51b233"),
+                selector: get_selector_from_name("try_me").unwrap(),
+                calldata: vec![FieldElement::from(666u32), FieldElement::from(2u32)],
+            }])
+            .nonce(nonce)
             .send()
             .await
         {
@@ -131,6 +178,15 @@ mod tests {
             BADGE_REGISTRY_ADDRESS,
             StarkNetChain::Testnet,
         )
+    }
+
+    #[tokio::test]
+    async fn check_account() {
+        let client = new_test_client();
+        println!("plip");
+        let result = client.plip().await;
+
+        assert!(result.is_ok(), "{}", result.err().unwrap());
     }
 
     #[tokio::test]
